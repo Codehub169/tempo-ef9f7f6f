@@ -26,23 +26,39 @@ class GitPullFailedError(Exception):
         if self.returncode is not None:
             # Case: Git command executed and returned a non-zero exit status
             parts.append(f"Command '{self.cmd_str}' returned non-zero exit status {self.returncode}.")
+            
+            has_stderr_content = isinstance(self.stderr, str) and self.stderr.strip()
+            has_stdout_content = isinstance(self.stdout, str) and self.stdout.strip()
+
+            if has_stderr_content:
+                parts.append(f"Git Stderr: '{self.stderr.strip()}'")
+            
+            if has_stdout_content:
+                # Append stdout content. If stderr also had content, this adds more detail.
+                # If stderr was empty, this provides the primary output from the command.
+                parts.append(f"Git Stdout: '{self.stdout.strip()}'")
+            
+            if not has_stderr_content and not has_stdout_content:
+                # Explicitly state that no output was received if command failed and produced nothing.
+                raw_stderr_repr = repr(self.stderr if self.stderr is not None else None) # Ensure None is handled gracefully by repr
+                raw_stdout_repr = repr(self.stdout if self.stdout is not None else None)
+                parts.append(f"Git Stderr/Stdout: <No output or only whitespace produced by git command. Raw Stderr: {raw_stderr_repr[:100]}, Raw Stdout: {raw_stdout_repr[:100]}>")
+
         else:
-            # Case: Error occurred before command execution or during (e.g. timeout)
+            # Case: Error occurred before command execution or during (e.g. timeout, FileNotFoundError)
             main_message = self.args[0]  # The primary message passed to __init__
             parts.append(main_message)
             if self.cmd_str != "Unknown command" and self.cmd_str not in main_message:
                 parts.append(f"(Command intended: '{self.cmd_str}')")
 
-        # Common logic for appending stderr/stdout details
-        # Ensure stderr/stdout are strings before calling .strip(), or handle if they could be other types.
-        # Given subprocess contract with text=True, they should be str or None.
-        stderr_content = self.stderr.strip() if isinstance(self.stderr, str) else ""
-        stdout_content = self.stdout.strip() if isinstance(self.stdout, str) else ""
+            # For these types of errors, stderr/stdout might also be available (e.g. from TimeoutExpired)
+            stderr_content_on_other_error = self.stderr.strip() if isinstance(self.stderr, str) else ""
+            stdout_content_on_other_error = self.stdout.strip() if isinstance(self.stdout, str) else ""
 
-        if stderr_content:
-            parts.append(f"Git Stderr: '{stderr_content}'")
-        elif stdout_content: # Only add stdout if stderr was empty but stdout has content
-            parts.append(f"Git Stdout: '{stdout_content}'")
+            if stderr_content_on_other_error:
+                parts.append(f"Git Stderr (captured): '{stderr_content_on_other_error}'")
+            elif stdout_content_on_other_error: # Only add stdout if stderr was empty but stdout has content
+                parts.append(f"Git Stdout (captured): '{stdout_content_on_other_error}'")
             
         return " ".join(parts)
 
